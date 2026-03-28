@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel数据处理系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .upload-zone { border: 2px dashed #d1d5db; transition: all 0.3s ease; }
+        .upload-zone:hover, .upload-zone.dragover { border-color: #3b82f6; background-color: #eff6ff; }
+        .data-preview { font-family: 'Monaco', 'Menlo', monospace; font-size: 12px; }
+        .step-dot { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; transition: all 0.3s; }
+        .step-dot.active { background: #3b82f6; color: white; }
+        .step-dot.done { background: #22c55e; color: white; }
+        .step-dot.pending { background: #e5e7eb; color: #9ca3af; }
+        .step-line { height: 2px; flex: 1; background: #e5e7eb; transition: background 0.3s; }
+        .step-line.done { background: #22c55e; }
+        .step-panel { display: none; }
+        .step-panel.active { display: block; animation: fadeSlideIn 0.4s ease; }
+        @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 12px; font-weight: 500; }
+        .tag-red { background: #fee2e2; color: #dc2626; }
+        .tag-orange { background: #fed7aa; color: #ea580c; }
+        .tag-yellow { background: #fef3c7; color: #d97706; }
+        .tag-green { background: #dcfce7; color: #16a34a; }
+        .row-red { background: #fef2f2; }
+        .row-orange { background: #fff7ed; }
+        .row-yellow { background: #fefce8; }
+        .row-green { background: #f0fdf4; }
+        .btn-download { display: inline-flex; align-items: center; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="max-w-5xl mx-auto px-4 py-4">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-900">Excel数据处理系统</h1>
+                    <p class="text-sm text-gray-500">分步骤完成数据清洗、匹配与配额管理</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-4 py-8">
+        <!-- Step Navigator -->
+        <div class="bg-white rounded-xl shadow-sm p-6 mb-8">
+            <div class="flex items-center">
+                <div class="flex items-center w-full">
+                    <div class="flex flex-col items-center">
+                        <div id="dot-1" class="step-dot active">1</div>
+                        <span class="text-xs mt-2 text-gray-600 whitespace-nowrap">上传数据</span>
+                    </div>
+                    <div id="line-1" class="step-line mx-2"></div>
+                    <div class="flex flex-col items-center">
+                        <div id="dot-2" class="step-dot pending">2</div>
+                        <span class="text-xs mt-2 text-gray-600 whitespace-nowrap">城市匹配</span>
+                    </div>
+                    <div id="line-2" class="step-line mx-2"></div>
+                    <div class="flex flex-col items-center">
+                        <div id="dot-3" class="step-dot pending">3</div>
+                        <span class="text-xs mt-2 text-gray-600 whitespace-nowrap">时间筛选</span>
+                    </div>
+                    <div id="line-3" class="step-line mx-2"></div>
+                    <div class="flex flex-col items-center">
+                        <div id="dot-4" class="step-dot pending">4</div>
+                        <span class="text-xs mt-2 text-gray-600 whitespace-nowrap">IP去重</span>
+                    </div>
+                    <div id="line-4" class="step-line mx-2"></div>
+                    <div class="flex flex-col items-center">
+                        <div id="dot-5" class="step-dot pending">5</div>
+                        <span class="text-xs mt-2 text-gray-600 whitespace-nowrap">配额分配</span>
+                    </div>
+                    <div id="line-5" class="step-line mx-2"></div>
+                    <div class="flex flex-col items-center">
+                        <div id="dot-6" class="step-dot pending">6</div>
+                        <span class="text-xs mt-2 text-gray-600 whitespace-nowrap">CEM匹配</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Step 1: Upload ====== -->
+        <div id="panel-1" class="step-panel active">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <h2 class="text-lg font-semibold mb-2">上传客户后台Excel + 系统后台Excel</h2>
+                <p class="text-sm text-gray-500 mb-6">请先上传两个数据源文件，系统将读取并预览数据</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">客户后台Excel</label>
+                        <div id="customer-upload" class="upload-zone rounded-lg p-6 text-center cursor-pointer">
+                            <svg class="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                            <p class="text-sm text-gray-500">点击或拖拽上传</p>
+                            <p class="text-xs text-gray-400 mt-1">B列:IP / D列:Data100ID / G列:答题时间 / J列:城市</p>
+                            <input type="file" id="customer-file" class="hidden" accept=".xlsx,.xls">
+                        </div>
+                        <div id="customer-info" class="hidden mt-2 text-sm text-green-600 flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            <span id="customer-name"></span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">系统后台Excel</label>
+                        <div id="system-upload" class="upload-zone rounded-lg p-6 text-center cursor-pointer">
+                            <svg class="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                            <p class="text-sm text-gray-500">点击或拖拽上传</p>
+                            <p class="text-xs text-gray-400 mt-1">B列:Data100ID / K列:归属城市</p>
+                            <input type="file" id="system-file" class="hidden" accept=".xlsx,.xls">
+                        </div>
+                        <div id="system-info" class="hidden mt-2 text-sm text-green-600 flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            <span id="system-name"></span>
+                        </div>
+                    </div>
+                </div>
+                <div id="upload-preview" class="hidden">
+                    <h3 class="font-medium text-gray-700 mb-3">客户数据预览（前5行）</h3>
+                    <div class="overflow-x-auto border rounded-lg"><table id="upload-table" class="w-full text-xs data-preview"></table></div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button id="btn-to-step2" onclick="goToStep(2)" disabled class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed">下一步：城市匹配 →</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Step 2: City Matching (FIRST) ====== -->
+        <div id="panel-2" class="step-panel">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <h2 class="text-lg font-semibold mb-2">城市匹配验证</h2>
+                <p class="text-sm text-gray-500 mb-6">通过Data100ID关联客户数据与系统数据，以系统城市为准标注差异</p>
+                <div class="p-4 rounded-lg border-2 border-yellow-200 bg-yellow-50 mb-6">
+                    <div class="flex items-center mb-2">
+                        <span class="tag tag-yellow">步骤1/3</span>
+                        <span class="ml-2 font-medium text-yellow-700">城市比对</span>
+                    </div>
+                    <p class="text-sm text-yellow-600">客户Excel J列城市 vs 系统Excel K列城市（通过D列↔B列Data100ID关联）</p>
+                    <p class="text-sm text-yellow-600 mt-1">不一致 → 标记为"城市异常"，以系统数据为准</p>
+                    <div id="stat-city" class="mt-2 text-sm font-semibold text-yellow-700"></div>
+                </div>
+                <h3 class="font-medium text-gray-700 mb-3">城市不匹配记录（仅显示差异项）</h3>
+                <div class="overflow-x-auto border rounded-lg max-h-96 overflow-y-auto">
+                    <table id="city-table" class="w-full text-xs data-preview"></table>
+                </div>
+                <div class="grid grid-cols-3 gap-4 mt-4">
+                    <div class="bg-yellow-50 rounded-lg p-4 text-center">
+                        <div id="city-mismatch" class="text-2xl font-bold text-yellow-600">0</div>
+                        <div class="text-xs text-yellow-500">城市不匹配</div>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-4 text-center">
+                        <div id="city-match" class="text-2xl font-bold text-gray-700">0</div>
+                        <div class="text-xs text-gray-500">城市匹配</div>
+                    </div>
+                    <div class="bg-green-50 rounded-lg p-4 text-center">
+                        <div id="city-valid" class="text-2xl font-bold text-green-600">0</div>
+                        <div class="text-xs text-green-500">当前有效</div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-between">
+                    <button onclick="goToStep(1)" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">← 返回上一步</button>
+                    <button onclick="goToStep(3)" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">下一步：时间筛选 →</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Step 3: Time Filtering (SECOND) ====== -->
+        <div id="panel-3" class="step-panel">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <h2 class="text-lg font-semibold mb-2">答题时间筛选</h2>
+                <p class="text-sm text-gray-500 mb-6">在城市匹配结果基础上，筛选答题时间 < 300秒的异常数据</p>
+                <div class="p-4 rounded-lg border-2 border-red-200 bg-red-50 mb-6">
+                    <div class="flex items-center mb-2">
+                        <span class="tag tag-red">步骤2/3</span>
+                        <span class="ml-2 font-medium text-red-700">答题时间过滤</span>
+                    </div>
+                    <p class="text-sm text-red-600">G列 < 300秒 → 标记为"剔除"</p>
+                    <div id="stat-time" class="mt-2 text-sm font-semibold text-red-700"></div>
+                </div>
+                <h3 class="font-medium text-gray-700 mb-3">时间异常记录</h3>
+                <div class="overflow-x-auto border rounded-lg max-h-96 overflow-y-auto">
+                    <table id="time-table" class="w-full text-xs data-preview"></table>
+                </div>
+                <div class="grid grid-cols-3 gap-4 mt-4">
+                    <div class="bg-gray-50 rounded-lg p-4 text-center">
+                        <div id="time-input" class="text-2xl font-bold text-gray-700">0</div>
+                        <div class="text-xs text-gray-500">本步输入</div>
+                    </div>
+                    <div class="bg-red-50 rounded-lg p-4 text-center">
+                        <div id="time-error" class="text-2xl font-bold text-red-600">0</div>
+                        <div class="text-xs text-red-500">时间异常</div>
+                    </div>
+                    <div class="bg-green-50 rounded-lg p-4 text-center">
+                        <div id="time-valid" class="text-2xl font-bold text-green-600">0</div>
+                        <div class="text-xs text-green-500">当前有效</div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-between">
+                    <button onclick="goToStep(2)" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">← 返回上一步</button>
+                    <button onclick="goToStep(4)" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">下一步：IP去重 →</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Step 4: IP Dedup (THIRD) ====== -->
+        <div id="panel-4" class="step-panel">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <h2 class="text-lg font-semibold mb-2">IP地址去重</h2>
+                <p class="text-sm text-gray-500 mb-6">在时间筛选结果基础上，对B列IP重复数据去重，每个IP保留首次出现的记录</p>
+                <div class="p-4 rounded-lg border-2 border-orange-200 bg-orange-50 mb-6">
+                    <div class="flex items-center mb-2">
+                        <span class="tag tag-orange">步骤3/3</span>
+                        <span class="ml-2 font-medium text-orange-700">IP去重</span>
+                    </div>
+                    <p class="text-sm text-orange-600">B列重复IP → 标记为"重复"，保留首次出现的记录</p>
+                    <div id="stat-ip" class="mt-2 text-sm font-semibold text-orange-700"></div>
+                </div>
+                <h3 class="font-medium text-gray-700 mb-3">IP重复记录（仅显示重复项）</h3>
+                <div class="overflow-x-auto border rounded-lg max-h-96 overflow-y-auto">
+                    <table id="ip-table" class="w-full text-xs data-preview"></table>
+                </div>
+                <div class="grid grid-cols-4 gap-4 mt-4">
+                    <div class="bg-gray-50 rounded-lg p-4 text-center">
+                        <div id="ip-input" class="text-2xl font-bold text-gray-700">0</div>
+                        <div class="text-xs text-gray-500">本步输入</div>
+                    </div>
+                    <div class="bg-orange-50 rounded-lg p-4 text-center">
+                        <div id="ip-dup" class="text-2xl font-bold text-orange-600">0</div>
+                        <div class="text-xs text-orange-500">IP重复</div>
+                    </div>
+                    <div class="bg-orange-50 rounded-lg p-4 text-center">
+                        <div id="ip-unique" class="text-2xl font-bold text-orange-500">0</div>
+                        <div class="text-xs text-orange-400">唯一IP</div>
+                    </div>
+                    <div class="bg-green-50 rounded-lg p-4 text-center">
+                        <div id="ip-valid" class="text-2xl font-bold text-green-600">0</div>
+                        <div class="text-xs text-green-500">最终有效</div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-between">
+                    <button onclick="goToStep(3)" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">← 返回上一步</button>
+                    <div class="flex space-x-3">
+                        <button onclick="downloadCleanResult()" class="btn-download px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            下载清洗结果
+                        </button>
+                        <button onclick="goToStep(5)" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">下一步：配额分配 →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Step 5: Quota Allocation ====== -->
+        <div id="panel-5" class="step-panel">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <h2 class="text-lg font-semibold mb-2">配额分配</h2>
+                <p class="text-sm text-gray-500 mb-6">上传配额表 + 清洗后数据，自动按省份/行业/规模/员工数维度统计完成进度</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">① 上传配额表Excel</label>
+                        <div id="quota-upload" class="upload-zone rounded-lg p-6 text-center cursor-pointer">
+                            <svg class="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                            <p class="text-sm text-gray-500">点击或拖拽上传配额表</p>
+                            <input type="file" id="quota-file" class="hidden" accept=".xlsx,.xls">
+                        </div>
+                        <div id="quota-info" class="hidden mt-2 text-sm text-green-600 flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            <span id="quota-name"></span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">② 上传清洗后数据 <span class="text-gray-400 font-normal">(可选，已完成步骤1-4则自动使用)</span></label>
+                        <div id="cleaned-upload" class="upload-zone rounded-lg p-6 text-center cursor-pointer">
+                            <svg class="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                            <p class="text-sm text-gray-500">点击或拖拽上传清洗结果Excel</p>
+                            <p class="text-xs text-gray-400 mt-1">需包含：AA列(处理状态)、H列(省)、R列(行业)、U列(员工)、V列(资产)</p>
+                            <input type="file" id="cleaned-file" class="hidden" accept=".xlsx,.xls">
+                        </div>
+                        <div id="cleaned-info" class="hidden mt-2 text-sm text-green-600 flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            <span id="cleaned-name"></span>
+                        </div>
+                        <div id="cleaned-auto" class="hidden mt-2 text-sm text-blue-600 flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span>已自动使用前面步骤的清洗数据</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="quota-content" class="hidden">
+                    <div class="border-b mb-4">
+                        <div class="flex space-x-6" id="quota-tabs-bar">
+                            <button onclick="showQuotaTab('province')" id="qtab-province" class="py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600">按省份</button>
+                            <button onclick="showQuotaTab('industry')" id="qtab-industry" class="py-2 text-sm font-medium text-gray-500">按行业</button>
+                            <button onclick="showQuotaTab('scale')" id="qtab-scale" class="py-2 text-sm font-medium text-gray-500">按规模</button>
+                            <button onclick="showQuotaTab('employee')" id="qtab-employee" class="py-2 text-sm font-medium text-gray-500">员工人数</button>
+                        </div>
+                    </div>
+                    <div id="quota-province" class="overflow-x-auto border rounded-lg max-h-80 overflow-y-auto"><table id="province-table" class="w-full text-sm"></table></div>
+                    <div id="quota-industry" class="hidden overflow-x-auto border rounded-lg max-h-80 overflow-y-auto"><table id="industry-table" class="w-full text-sm"></table></div>
+                    <div id="quota-scale" class="hidden overflow-x-auto border rounded-lg max-h-80 overflow-y-auto"><table id="scale-table" class="w-full text-sm"></table></div>
+                    <div id="quota-employee" class="hidden overflow-x-auto border rounded-lg max-h-80 overflow-y-auto"><table id="employee-table" class="w-full text-sm"></table></div>
+                </div>
+                <div class="mt-6 flex justify-between">
+                    <button onclick="goToStep(4)" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">← 返回上一步</button>
+                    <div class="flex space-x-3">
+                        <button id="btn-dl-quota" onclick="downloadQuotaResult()" class="btn-download px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            下载配额匹配结果
+                        </button>
+                        <button onclick="goToStep(6)" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">下一步：CEM匹配 →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== Step 6: CEM Matching ====== -->
+        <div id="panel-6" class="step-panel">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <h2 class="text-lg font-semibold mb-2">CEM数据匹配</h2>
+                <p class="text-sm text-gray-500 mb-6">上传CEM Excel，将前面的处理结果通过Data100ID匹配回填</p>
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">上传CEM Excel</label>
+                    <div id="cem-upload" class="upload-zone rounded-lg p-6 text-center cursor-pointer" style="max-width:400px;">
+                        <svg class="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                        <p class="text-sm text-gray-500">点击或拖拽上传CEM Excel</p>
+                        <p class="text-xs text-gray-400 mt-1">需要包含: AC列(Data100ID)</p>
+                        <input type="file" id="cem-file" class="hidden" accept=".xlsx,.xls">
+                    </div>
+                    <div id="cem-info" class="hidden mt-2 text-sm text-green-600 flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <span id="cem-name"></span>
+                    </div>
+                </div>
+                <div id="cem-preview" class="hidden">
+                    <h3 class="font-medium text-gray-700 mb-3">CEM匹配结果预览</h3>
+                    <div class="grid grid-cols-3 gap-4 mb-4">
+                        <div class="bg-green-50 rounded-lg p-4 text-center">
+                            <div id="cem-matched" class="text-2xl font-bold text-green-600">0</div>
+                            <div class="text-xs text-green-500">匹配成功</div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-4 text-center">
+                            <div id="cem-unmatched" class="text-2xl font-bold text-gray-600">0</div>
+                            <div class="text-xs text-gray-500">未匹配</div>
+                        </div>
+                        <div class="bg-blue-50 rounded-lg p-4 text-center">
+                            <div id="cem-total" class="text-2xl font-bold text-blue-600">0</div>
+                            <div class="text-xs text-blue-500">CEM总数据</div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto border rounded-lg max-h-80 overflow-y-auto">
+                        <table id="cem-table" class="w-full text-xs data-preview"></table>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-between">
+                    <button onclick="goToStep(5)" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">← 返回上一步</button>
+                    <button id="btn-dl-cem" onclick="downloadCEMResult()" class="btn-download px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition hidden">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        下载CEM匹配结果
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // ========== State ==========
+        let state = {
+            currentStep: 1,
+            customerRaw: null,
+            systemRaw: null,
+            // Pipeline: each step filters from previous
+            afterCity: null,    // after step 2: city mismatch marked
+            afterTime: null,    // after step 3: time error marked
+            afterIP: null,      // after step 4: ip dup marked (final)
+            systemCityMap: {},
+            quotaRaw: null,
+            cemProcessed: null,
+            stats: { total: 0, cityMismatch: 0, timeError: 0, ipDuplicate: 0, valid: 0 }
+        };
+
+        // ========== Helpers ==========
+        function setupUpload(zoneId, fileId, cb) {
+            const z = document.getElementById(zoneId), inp = document.getElementById(fileId);
+            z.addEventListener('click', () => inp.click());
+            z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('dragover'); });
+            z.addEventListener('dragleave', () => z.classList.remove('dragover'));
+            z.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('dragover'); if (e.dataTransfer.files[0]) cb(e.dataTransfer.files[0]); });
+            inp.addEventListener('change', e => { if (e.target.files[0]) cb(e.target.files[0]); });
+        }
+
+        function readExcel(file) {
+            return new Promise(res => {
+                const r = new FileReader();
+                r.onload = e => { const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'}); res(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1})); };
+                r.readAsArrayBuffer(file);
+            });
+        }
+
+        function ts() { return new Date().toISOString().slice(0,19).replace(/:/g,'-'); }
+
+        function getStatus(item) {
+            if (item.cityError) return { status: '城市异常', remark: '客户:' + item.city + ' → 系统:' + item.systemCity };
+            if (item.timeError) return { status: '剔除', remark: '答题时间过短(' + item.time + '秒)' };
+            if (item.ipDuplicate) return { status: '重复', remark: 'IP重复(' + item.ip + ')' };
+            return { status: '有效', remark: '' };
+        }
+
+        // ========== Navigation ==========
+        function goToStep(step) {
+            document.getElementById('panel-' + state.currentStep).classList.remove('active');
+            document.getElementById('panel-' + step).classList.add('active');
+            state.currentStep = step;
+            for (let i = 1; i <= 6; i++) {
+                const d = document.getElementById('dot-' + i);
+                d.className = i < step ? 'step-dot done' : i === step ? 'step-dot active' : 'step-dot pending';
+                d.innerHTML = i < step ? '✓' : i;
+                if (i < 6) document.getElementById('line-' + i).className = i < step ? 'step-line done mx-2' : 'step-line mx-2';
+            }
+            if (step === 2) runCityMatch();
+            if (step === 3) runTimeFilter();
+            if (step === 4) runIPDedup();
+        }
+
+        // ========== Step 1: Upload ==========
+        setupUpload('customer-upload', 'customer-file', async f => {
+            state.customerRaw = await readExcel(f);
+            document.getElementById('customer-name').textContent = f.name + ' (' + state.customerRaw.length + '行)';
+            document.getElementById('customer-info').classList.remove('hidden');
+            previewUpload();
+            checkReady();
+        });
+        setupUpload('system-upload', 'system-file', async f => {
+            state.systemRaw = await readExcel(f);
+            document.getElementById('system-name').textContent = f.name + ' (' + state.systemRaw.length + '行)';
+            document.getElementById('system-info').classList.remove('hidden');
+            checkReady();
+        });
+        function checkReady() { document.getElementById('btn-to-step2').disabled = !(state.customerRaw && state.systemRaw); }
+        function previewUpload() {
+            if (!state.customerRaw) return;
+            const rows = state.customerRaw.slice(1, 6);
+            const cols = [1,3,6,9], labels = ['IP (B列)','Data100ID (D列)','答题时间 (G列)','城市 (J列)'];
+            let h = '<thead class="bg-gray-50"><tr>' + cols.map((c,i) => '<th class="px-3 py-2 text-left">' + labels[i] + '</th>').join('') + '</tr></thead><tbody>';
+            rows.forEach(r => { h += '<tr class="border-t">' + cols.map(c => '<td class="px-3 py-2">' + (r[c]||'') + '</td>').join('') + '</tr>'; });
+            document.getElementById('upload-table').innerHTML = h + '</tbody>';
+            document.getElementById('upload-preview').classList.remove('hidden');
+        }
+
+        // ========== Step 2: City Matching (FIRST) ==========
+        function runCityMatch() {
+            state.systemCityMap = {};
+            state.systemRaw.slice(1).forEach(r => { if (r[1]) state.systemCityMap[String(r[1])] = r[10]; });
+
+            const rows = state.customerRaw.slice(1);
+            state.stats.total = rows.length;
+            state.afterCity = [];
+            let mismatch = 0, match = 0;
+
+            rows.forEach(r => {
+                const id = String(r[3] || ''), city = r[9], sysCity = state.systemCityMap[id] || '';
+                const hasError = sysCity && city !== sysCity;
+                if (hasError) mismatch++; else if (sysCity) match++;
+                state.afterCity.push({
+                    row: r, data100id: r[3], ip: r[1], time: parseInt(r[6]),
+                    city: city, systemCity: sysCity,
+                    cityError: hasError, timeError: false, ipDuplicate: false
+                });
+            });
+
+            state.stats.cityMismatch = mismatch;
+            state.stats.valid = rows.length - mismatch;
+            document.getElementById('stat-city').textContent = mismatch + ' 条不匹配';
+            document.getElementById('city-mismatch').textContent = mismatch;
+            document.getElementById('city-match').textContent = match;
+            document.getElementById('city-valid').textContent = state.stats.valid;
+
+            let h = '<thead class="bg-gray-50 sticky top-0"><tr><th class="px-3 py-2 text-left">Data100ID</th><th class="px-3 py-2 text-left">客户城市</th><th class="px-3 py-2 text-left">系统城市</th><th class="px-3 py-2 text-left">状态</th></tr></thead><tbody>';
+            let cnt = 0;
+            state.afterCity.forEach(item => {
+                if (!item.cityError) return;
+                h += '<tr class="row-yellow border-t"><td class="px-3 py-2">' + item.data100id + '</td><td class="px-3 py-2">' + item.city + '</td><td class="px-3 py-2 font-bold">' + item.systemCity + '</td><td class="px-3 py-2"><span class="tag tag-yellow">不匹配</span></td></tr>';
+                cnt++;
+            });
+            if (!cnt) h += '<tr><td colspan="4" class="px-3 py-4 text-center text-green-600">✓ 所有数据城市均匹配</td></tr>';
+            document.getElementById('city-table').innerHTML = h + '</tbody>';
+        }
+
+        // ========== Step 3: Time Filtering (SECOND, based on afterCity) ==========
+        function runTimeFilter() {
+            state.afterTime = state.afterCity.map(item => ({...item}));
+            let timeErrors = 0;
+
+            state.afterTime.forEach(item => {
+                if (item.cityError) return; // skip already invalid
+                const err = !isNaN(item.time) && item.time < 300;
+                item.timeError = err;
+                if (err) timeErrors++;
+            });
+
+            state.stats.timeError = timeErrors;
+            state.stats.valid -= timeErrors;
+            const inputCount = state.afterCity.filter(i => !i.cityError).length;
+
+            document.getElementById('stat-time').textContent = timeErrors + ' 条异常 (占比 ' + (inputCount ? (timeErrors/inputCount*100).toFixed(1) : 0) + '%)';
+            document.getElementById('time-input').textContent = inputCount;
+            document.getElementById('time-error').textContent = timeErrors;
+            document.getElementById('time-valid').textContent = state.stats.valid;
+
+            let h = '<thead class="bg-gray-50 sticky top-0"><tr><th class="px-3 py-2 text-left">Data100ID</th><th class="px-3 py-2 text-left">IP</th><th class="px-3 py-2 text-left">答题时间</th><th class="px-3 py-2 text-left">城市</th><th class="px-3 py-2 text-left">状态</th></tr></thead><tbody>';
+            state.afterTime.forEach(item => {
+                if (!item.timeError) return;
+                h += '<tr class="row-red border-t"><td class="px-3 py-2">' + item.data100id + '</td><td class="px-3 py-2">' + item.ip + '</td><td class="px-3 py-2 font-bold text-red-600">' + item.time + '</td><td class="px-3 py-2">' + item.city + '</td><td class="px-3 py-2"><span class="tag tag-red">时间异常</span></td></tr>';
+            });
+            if (!timeErrors) h += '<tr><td colspan="5" class="px-3 py-4 text-center text-green-600">✓ 无时间异常数据</td></tr>';
+            document.getElementById('time-table').innerHTML = h + '</tbody>';
+        }
+
+        // ========== Step 4: IP Dedup (THIRD, based on afterTime) ==========
+        function runIPDedup() {
+            state.afterIP = state.afterTime.map(item => ({...item}));
+            let ipDups = 0;
+            const seen = new Set();
+
+            state.afterIP.forEach(item => {
+                if (item.cityError || item.timeError) return; // skip already invalid
+                const dup = seen.has(item.ip);
+                if (!dup && item.ip) seen.add(item.ip);
+                item.ipDuplicate = dup;
+                if (dup) ipDups++;
+            });
+
+            state.stats.ipDuplicate = ipDups;
+            state.stats.valid -= ipDups;
+            const inputCount = state.afterTime.filter(i => !i.cityError && !i.timeError).length;
+            const uniqueCount = seen.size;
+
+            document.getElementById('stat-ip').textContent = ipDups + ' 条重复 (占比 ' + (inputCount ? (ipDups/inputCount*100).toFixed(1) : 0) + '%)';
+            document.getElementById('ip-input').textContent = inputCount;
+            document.getElementById('ip-dup').textContent = ipDups;
+            document.getElementById('ip-unique').textContent = uniqueCount;
+            document.getElementById('ip-valid').textContent = state.stats.valid;
+
+            let h = '<thead class="bg-gray-50 sticky top-0"><tr><th class="px-3 py-2 text-left">Data100ID</th><th class="px-3 py-2 text-left">IP</th><th class="px-3 py-2 text-left">答题时间</th><th class="px-3 py-2 text-left">城市</th><th class="px-3 py-2 text-left">状态</th></tr></thead><tbody>';
+            state.afterIP.forEach(item => {
+                if (!item.ipDuplicate) return;
+                h += '<tr class="row-orange border-t"><td class="px-3 py-2">' + item.data100id + '</td><td class="px-3 py-2">' + item.ip + '</td><td class="px-3 py-2">' + item.time + '</td><td class="px-3 py-2">' + item.city + '</td><td class="px-3 py-2"><span class="tag tag-orange">IP重复</span></td></tr>';
+            });
+            if (!ipDups) h += '<tr><td colspan="5" class="px-3 py-4 text-center text-green-600">✓ 无IP重复数据</td></tr>';
+            document.getElementById('ip-table').innerHTML = h + '</tbody>';
+        }
+
+        // ========== Step 5: Quota ==========
+        setupUpload('quota-upload', 'quota-file', async f => {
+            state.quotaRaw = await readExcel(f);
+            document.getElementById('quota-name').textContent = f.name;
+            document.getElementById('quota-info').classList.remove('hidden');
+            tryRenderQuota();
+        });
+
+        // Upload cleaned result directly (skip steps 1-4)
+        setupUpload('cleaned-upload', 'cleaned-file', async f => {
+            const raw = await readExcel(f);
+            state.uploadedCleanedData = raw;
+            document.getElementById('cleaned-name').textContent = f.name + ' (' + (raw.length - 1) + '行数据)';
+            document.getElementById('cleaned-info').classList.remove('hidden');
+            tryRenderQuota();
+        });
+
+        // Render quota tables when both quota table and data source are ready
+        function tryRenderQuota() {
+            // Check: need quota table + (pipeline data OR uploaded cleaned file)
+            const hasQuota = !!state.quotaRaw;
+            const hasPipeline = !!(state.afterIP && state.afterIP.length);
+            const hasUploaded = !!state.uploadedCleanedData;
+
+            if (!hasQuota) return;
+
+            // Show auto-use hint if pipeline data exists
+            if (hasPipeline && !hasUploaded) {
+                document.getElementById('cleaned-auto').classList.remove('hidden');
+            }
+
+            // Determine valid data source
+            if (hasPipeline) {
+                state.quotaValidSource = 'pipeline';
+            } else if (hasUploaded) {
+                state.quotaValidSource = 'uploaded';
+            } else {
+                return; // No data source yet, wait
+            }
+
+            document.getElementById('quota-content').classList.remove('hidden');
+            renderQuotaTables();
+        }
+
+        // Override goToStep for step 5 to trigger quota rendering with pipeline data
+        const _origGoToStep = goToStep;
+        goToStep = function(step) {
+            _origGoToStep(step);
+            if (step === 5 && state.quotaRaw && state.afterIP) {
+                state.quotaValidSource = 'pipeline';
+                tryRenderQuota();
+            }
+        };
+
+        function showQuotaTab(t) {
+            ['province','industry','scale','employee'].forEach(x => {
+                const el = document.getElementById('quota-'+x);
+                const tab = document.getElementById('qtab-'+x);
+                if (el) el.classList.toggle('hidden', x!==t);
+                if (tab) tab.className = x===t ? 'py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600' : 'py-2 text-sm font-medium text-gray-500';
+            });
+        }
+
+        // ========== Quota Matching Engine ==========
+        function buildQuotaCounts() {
+            let validRows = [];
+
+            if (state.quotaValidSource === 'uploaded' && state.uploadedCleanedData) {
+                // Read from uploaded cleaned file: AA(col26)="有效"
+                state.uploadedCleanedData.slice(1).forEach(row => {
+                    if (String(row[26]).trim() === '有效') {
+                        validRows.push(row);
+                    }
+                });
+            } else if (state.afterIP) {
+                // Read from pipeline: valid items
+                state.afterIP.filter(i => !i.cityError && !i.timeError && !i.ipDuplicate).forEach(item => {
+                    validRows.push(item.row);
+                });
+            }
+
+            // Province map: H列(index 7)
+            const provinceCounts = {};
+            // Industry map: R列(index 17), strip "X." prefix
+            const industryCounts = {};
+            // Asset scale map: V列(index 21), strip "X." prefix
+            const scaleCounts = {};
+            // Employee count map: U列(index 20), strip "X." prefix
+            const employeeCounts = {};
+
+            validRows.forEach(row => {
+                const prov = String(row[7] || '').trim();
+                if (prov) provinceCounts[prov] = (provinceCounts[prov] || 0) + 1;
+
+                const indRaw = String(row[17] || '').trim();
+                if (indRaw) {
+                    const ind = indRaw.replace(/^[A-Z]\./, '');
+                    industryCounts[ind] = (industryCounts[ind] || 0) + 1;
+                }
+
+                const scRaw = String(row[21] || '').trim();
+                if (scRaw) {
+                    const sc = scRaw.replace(/^[A-Z]\./, '');
+                    scaleCounts[sc] = (scaleCounts[sc] || 0) + 1;
+                }
+
+                const empRaw = String(row[20] || '').trim();
+                if (empRaw) {
+                    const emp = empRaw.replace(/^[A-Z]\./, '');
+                    employeeCounts[emp] = (employeeCounts[emp] || 0) + 1;
+                }
+            });
+
+            function matchProvinceName(customerProv, quotaProv) {
+                if (!customerProv || !quotaProv) return false;
+                const c = customerProv.replace(/省|市|自治区|壮族|维吾尔|回族/g, '');
+                const q = quotaProv.replace(/省|市|自治区|壮族|维吾尔|回族/g, '');
+                return c === q;
+            }
+
+            return { provinceCounts, industryCounts, scaleCounts, employeeCounts, matchProvinceName, validTotal: validRows.length };
+        }
+
+        // Helper: render a "差值" cell
+        function diffCell(quota, done) {
+            const diff = quota - done;
+            if (diff <= 0) return '<td class="px-3 py-2 text-right font-semibold text-green-600">达标</td>';
+            if (diff === quota) return '<td class="px-3 py-2 text-right font-semibold text-red-500">' + diff + '</td>';
+            return '<td class="px-3 py-2 text-right font-semibold text-orange-500">' + diff + '</td>';
+        }
+
+        function renderQuotaTables() {
+            const d = state.quotaRaw;
+            const counts = buildQuotaCounts();
+
+            // === Province Table ===
+            let h = '<thead class="bg-gray-50 sticky top-0"><tr><th class="px-3 py-2 text-left">省份</th><th class="px-3 py-2 text-left">区域</th><th class="px-3 py-2 text-right">GDP(亿)</th><th class="px-3 py-2 text-right">占比</th><th class="px-3 py-2 text-right">总配额</th><th class="px-3 py-2 text-right">完成进度</th><th class="px-3 py-2 text-right">差值</th><th class="px-3 py-2 text-right">完成率</th></tr></thead><tbody>';
+            let tq = 0, tqDone = 0;
+            for (let i=3; i<d.length&&i<40; i++) {
+                if (!d[i][0] || typeof d[i][0] !== 'string') continue;
+                if (d[i][0].startsWith('表') || d[i][0].startsWith('所')) break;
+                const quota = typeof d[i][4]==='number' ? d[i][4] : 0;
+                if (quota) tq += quota;
+                let done = 0;
+                const qProv = String(d[i][0]);
+                Object.keys(counts.provinceCounts).forEach(cProv => {
+                    if (counts.matchProvinceName(cProv, qProv)) done = counts.provinceCounts[cProv];
+                });
+                tqDone += done;
+                const pct = quota ? (done/quota*100).toFixed(1) : '-';
+                const pctClass = quota && done >= quota ? 'text-green-600' : done > 0 ? 'text-yellow-600' : 'text-gray-400';
+                h += '<tr class="border-t"><td class="px-3 py-2 font-medium">'+qProv+'</td><td class="px-3 py-2"><span class="tag tag-green">'+(d[i][1]||'')+'</span></td><td class="px-3 py-2 text-right">'+(typeof d[i][2]==='number'?d[i][2].toLocaleString():d[i][2]||'')+'</td><td class="px-3 py-2 text-right">'+(d[i][3]?d[i][3]+'%':'')+'</td><td class="px-3 py-2 text-right font-semibold">'+quota+'</td><td class="px-3 py-2 text-right font-bold text-blue-600">'+done+'</td>'+diffCell(quota, done)+'<td class="px-3 py-2 text-right '+pctClass+'">'+pct+'%</td></tr>';
+            }
+            const totalPct = tq ? (tqDone/tq*100).toFixed(1) : '-';
+            h += '<tr class="bg-blue-50 font-bold border-t-2"><td class="px-3 py-2" colspan="4">合计</td><td class="px-3 py-2 text-right">'+tq+'</td><td class="px-3 py-2 text-right text-blue-600">'+tqDone+'</td>'+diffCell(tq, tqDone)+'<td class="px-3 py-2 text-right text-blue-600">'+totalPct+'%</td></tr></tbody>';
+            document.getElementById('province-table').innerHTML = h;
+
+            // === Industry Table (col I=8=name, J=9=ratio, K=10=quota) ===
+            // NOTE: quota table values have prefix like "A.采矿业", strip for matching
+            h = '<thead class="bg-gray-50 sticky top-0"><tr><th class="px-3 py-2 text-left">行业</th><th class="px-3 py-2 text-right">占比</th><th class="px-3 py-2 text-right">总配额</th><th class="px-3 py-2 text-right">完成进度</th><th class="px-3 py-2 text-right">差值</th><th class="px-3 py-2 text-right">完成率</th></tr></thead><tbody>';
+            let iq = 0, iqDone = 0;
+            for (let i=2; i<d.length&&i<40; i++) {
+                if (!d[i][8] || typeof d[i][8] !== 'string') continue;
+                if (d[i][8].startsWith('表') || d[i][8] === '所属行业') continue;
+                const qIndustry = d[i][8];
+                // Display: strip prefix for cleaner display
+                const displayName = qIndustry.replace(/^[A-Z]\./, '');
+                const quota = typeof d[i][10]==='number' ? d[i][10] : 0;
+                if (quota) iq += quota;
+                // Match: strip prefix from quota value, compare with already-stripped customer values
+                const qClean = qIndustry.replace(/^[A-Z]\./, '');
+                let done = 0;
+                if (counts.industryCounts[qClean]) done = counts.industryCounts[qClean];
+                iqDone += done;
+                const pct = quota ? (done/quota*100).toFixed(1) : '-';
+                const pctClass = quota && done >= quota ? 'text-green-600' : done > 0 ? 'text-yellow-600' : 'text-gray-400';
+                const quotaDisplay = quota ? quota : '-';
+                h += '<tr class="border-t"><td class="px-3 py-2 font-medium">'+displayName+'</td><td class="px-3 py-2 text-right">'+(d[i][9]?d[i][9]*100+'%':'')+'</td><td class="px-3 py-2 text-right font-semibold">'+quotaDisplay+'</td><td class="px-3 py-2 text-right font-bold text-blue-600">'+done+'</td>'+diffCell(quota, done)+'<td class="px-3 py-2 text-right '+pctClass+'">'+pct+'%</td></tr>';
+            }
+            const iTotalPct = iq ? (iqDone/iq*100).toFixed(1) : '-';
+            h += '<tr class="bg-blue-50 font-bold border-t-2"><td class="px-3 py-2" colspan="2">合计</td><td class="px-3 py-2 text-right">'+iq+'</td><td class="px-3 py-2 text-right text-blue-600">'+iqDone+'</td>'+diffCell(iq, iqDone)+'<td class="px-3 py-2 text-right text-blue-600">'+iTotalPct+'%</td></tr></tbody>';
+            document.getElementById('industry-table').innerHTML = h;
+
+            // === Scale Table (col I=8=name, J=9=ratio, K=10=quota) ===
+            // NOTE: some rows have no quota (100-500万, 1000-5000万, 5000万-1亿, 5亿-50亿) - show anyway
+            h = '<thead class="bg-gray-50 sticky top-0"><tr><th class="px-3 py-2 text-left">企业规模</th><th class="px-3 py-2 text-right">占比</th><th class="px-3 py-2 text-right">总配额</th><th class="px-3 py-2 text-right">完成进度</th><th class="px-3 py-2 text-right">差值</th><th class="px-3 py-2 text-right">完成率</th></tr></thead><tbody>';
+            let sq = 0, sqDone = 0;
+            let scaleFound = false;
+            for (let i=1; i<d.length&&i<50; i++) {
+                if (d[i][8] && String(d[i][8]).includes('规模')) { scaleFound = true; continue; }
+                if (!scaleFound) continue;
+                if (!d[i][8] || typeof d[i][8] !== 'string') continue;
+                if (d[i][8].startsWith('表') || d[i][8] === '企业总资产规模') continue;
+                const qScale = d[i][8];
+                const displayName = qScale.replace(/^[A-Z]\./, '');
+                const quota = typeof d[i][10]==='number' ? d[i][10] : 0;
+                if (quota) sq += quota;
+                // Match: strip prefix, then compare
+                const qClean = qScale.replace(/^[A-Z]\./, '');
+                let done = counts.scaleCounts[qClean] || 0;
+                sqDone += done;
+                const pct = quota ? (done/quota*100).toFixed(1) : '-';
+                const pctClass = quota && done >= quota ? 'text-green-600' : done > 0 ? 'text-yellow-600' : 'text-gray-400';
+                const quotaDisplay = quota ? quota : '-';
+                h += '<tr class="border-t"><td class="px-3 py-2 font-medium">'+displayName+'</td><td class="px-3 py-2 text-right">'+(d[i][9]?d[i][9]*100+'%':'')+'</td><td class="px-3 py-2 text-right font-semibold">'+quotaDisplay+'</td><td class="px-3 py-2 text-right font-bold text-blue-600">'+done+'</td>'+diffCell(quota, done)+'<td class="px-3 py-2 text-right '+pctClass+'">'+pct+'%</td></tr>';
+            }
+            const sTotalPct = sq ? (sqDone/sq*100).toFixed(1) : '-';
+            h += '<tr class="bg-blue-50 font-bold border-t-2"><td class="px-3 py-2" colspan="2">合计</td><td class="px-3 py-2 text-right">'+sq+'</td><td class="px-3 py-2 text-right text-blue-600">'+sqDone+'</td>'+diffCell(sq, sqDone)+'<td class="px-3 py-2 text-right text-blue-600">'+sTotalPct+'%</td></tr></tbody>';
+            document.getElementById('scale-table').innerHTML = h;
+
+            // === Employee Table (col I=8=name, J=9=ratio, K=10=quota) ===
+            h = '<thead class="bg-gray-50 sticky top-0"><tr><th class="px-3 py-2 text-left">员工人数</th><th class="px-3 py-2 text-right">占比</th><th class="px-3 py-2 text-right">总配额</th><th class="px-3 py-2 text-right">完成进度</th><th class="px-3 py-2 text-right">差值</th><th class="px-3 py-2 text-right">完成率</th></tr></thead><tbody>';
+            let eq = 0, eqDone = 0;
+            let empFound = false;
+            for (let i=1; i<d.length&&i<60; i++) {
+                if (d[i][8] && String(d[i][8]).startsWith('表4')) { empFound = true; continue; }
+                if (!empFound) continue;
+                if (!d[i][8] || typeof d[i][8] !== 'string') continue;
+                if (d[i][8].startsWith('表') || d[i][8].includes('在职员工总人数为')) continue;
+                const qEmp = d[i][8];
+                const displayName = qEmp.replace(/^[A-Z]\./, '');
+                const quota = typeof d[i][10]==='number' ? d[i][10] : 0;
+                if (quota) eq += quota;
+                // Match: strip prefix, normalize ～ to -
+                const qClean = qEmp.replace(/^[A-Z]\./, '').replace(/～/g, '-');
+                let done = 0;
+                Object.keys(counts.employeeCounts).forEach(cEmp => {
+                    const cClean = cEmp.replace(/～/g, '-');
+                    if (cClean === qClean) done = counts.employeeCounts[cEmp];
+                });
+                eqDone += done;
+                const pct = quota ? (done/quota*100).toFixed(1) : '-';
+                const pctClass = quota && done >= quota ? 'text-green-600' : done > 0 ? 'text-yellow-600' : 'text-gray-400';
+                h += '<tr class="border-t"><td class="px-3 py-2 font-medium">'+displayName+'</td><td class="px-3 py-2 text-right">'+(d[i][9]?d[i][9]*100+'%':'')+'</td><td class="px-3 py-2 text-right font-semibold">'+quota+'</td><td class="px-3 py-2 text-right font-bold text-blue-600">'+done+'</td>'+diffCell(quota, done)+'<td class="px-3 py-2 text-right '+pctClass+'">'+pct+'%</td></tr>';
+            }
+            const eTotalPct = eq ? (eqDone/eq*100).toFixed(1) : '-';
+            h += '<tr class="bg-blue-50 font-bold border-t-2"><td class="px-3 py-2" colspan="2">合计</td><td class="px-3 py-2 text-right">'+eq+'</td><td class="px-3 py-2 text-right text-blue-600">'+eqDone+'</td>'+diffCell(eq, eqDone)+'<td class="px-3 py-2 text-right text-blue-600">'+eTotalPct+'%</td></tr></tbody>';
+            document.getElementById('employee-table').innerHTML = h;
+
+            showQuotaTab('province');
+        }
+
+        // ========== Step 6: CEM ==========
+        setupUpload('cem-upload', 'cem-file', async f => {
+            const raw = await readExcel(f);
+            document.getElementById('cem-name').textContent = f.name;
+            document.getElementById('cem-info').classList.remove('hidden');
+            matchCEM(raw);
+        });
+
+        function matchCEM(raw) {
+            const resultMap = {};
+            state.afterIP.forEach(item => {
+                const s = getStatus(item);
+                resultMap[String(item.data100id)] = s;
+            });
+
+            const acIndex = 28;
+            let matched = 0, unmatched = 0;
+            state.cemProcessed = [];
+
+            raw.forEach((r, i) => {
+                if (i === 0) { state.cemProcessed.push({row:[...r], status:'处理状态', remark:'备注'}); return; }
+                const id = String(r[acIndex]||'');
+                const res = resultMap[id];
+                if (res) { matched++; state.cemProcessed.push({row:[...r], status:res.status, remark:res.remark}); }
+                else { unmatched++; state.cemProcessed.push({row:[...r], status:'未匹配', remark:''}); }
+            });
+
+            document.getElementById('cem-matched').textContent = matched;
+            document.getElementById('cem-unmatched').textContent = unmatched;
+            document.getElementById('cem-total').textContent = raw.length - 1;
+
+            let h = '<thead class="bg-gray-50 sticky top-0"><tr><th class="px-3 py-2 text-left">Data100ID</th><th class="px-3 py-2 text-left">处理状态</th><th class="px-3 py-2 text-left">备注</th></tr></thead><tbody>';
+            state.cemProcessed.slice(1, 16).forEach(item => {
+                const cls = item.status==='剔除'?'row-red':item.status==='重复'?'row-orange':item.status==='城市异常'?'row-yellow':item.status==='有效'?'row-green':'';
+                const tagCls = item.status==='剔除'?'tag-red':item.status==='重复'?'tag-orange':item.status==='城市异常'?'tag-yellow':item.status==='有效'?'tag-green':'';
+                h += '<tr class="'+cls+' border-t"><td class="px-3 py-2">'+(item.row[acIndex]||'')+'</td><td class="px-3 py-2">'+(item.status==='未匹配'?'<span class="text-gray-500">'+item.status+'</span>':'<span class="tag '+tagCls+'">'+item.status+'</span>')+'</td><td class="px-3 py-2 text-gray-500">'+item.remark+'</td></tr>';
+            });
+            if (state.cemProcessed.length > 16) h += '<tr><td colspan="3" class="px-3 py-2 text-center text-gray-400">... 还有 '+(state.cemProcessed.length-16)+' 行</td></tr>';
+            document.getElementById('cem-table').innerHTML = h + '</tbody>';
+            document.getElementById('cem-preview').classList.remove('hidden');
+            document.getElementById('btn-dl-cem').classList.remove('hidden');
+        }
+
+        // ========== Downloads ==========
+        function downloadCleanResult() {
+            const header = state.customerRaw[0] || [];
+            const newCols = ['系统城市','城市异常','时间异常','IP重复','处理状态','备注'];
+            const exp = [[...header, ...newCols]];
+            state.afterIP.forEach(item => {
+                const s = getStatus(item);
+                exp.push([...item.row.map(c => c !== undefined ? c : ''), item.systemCity||'', item.cityError?'是':'否', item.timeError?'是':'否', item.ipDuplicate?'是':'否', s.status, s.remark]);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(exp);
+            ws['!cols'] = exp[0].map((_,i) => { let m=0; exp.forEach(r => { m=Math.max(m, String(r[i]||'').length); }); return {wch:Math.min(Math.max(m+2,10),40)}; });
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, '清洗结果');
+            XLSX.writeFile(wb, '客户数据清洗结果_'+ts()+'.xlsx');
+        }
+
+        function downloadQuotaResult() {
+            const d = state.quotaRaw;
+            const counts = buildQuotaCounts();
+
+            // Build a writable copy
+            const output = [];
+            for (let i = 0; i < d.length; i++) {
+                output.push([...d[i]]);
+            }
+
+            // Province: 完成进度=F(5), 差值=G(6)
+            for (let i = 3; i < output.length && i < 40; i++) {
+                if (!output[i][0] || typeof output[i][0] !== 'string') continue;
+                if (output[i][0].startsWith('表') || output[i][0].startsWith('所')) break;
+                const qProv = String(output[i][0]);
+                let done = 0;
+                Object.keys(counts.provinceCounts).forEach(cProv => {
+                    if (counts.matchProvinceName(cProv, qProv)) done = counts.provinceCounts[cProv];
+                });
+                output[i][5] = done;
+                output[i][6] = (output[i][4] || 0) - done;
+            }
+            // Province totals row
+            for (let i = 3; i < output.length && i < 40; i++) {
+                if (!output[i][0] && output[i][4] && typeof output[i][4] === 'number') {
+                    let totalDone = 0;
+                    for (let j = 3; j < i; j++) totalDone += (output[j][5] || 0);
+                    output[i][5] = totalDone;
+                    output[i][6] = (output[i][4] || 0) - totalDone;
+                    break;
+                }
+            }
+
+            // Industry (表2): 完成进度=L(11), 差值=M(12)
+            // Quota table values have prefix like "A.采矿业", strip before matching
+            for (let i = 2; i < output.length && i < 40; i++) {
+                if (!output[i][8] || typeof output[i][8] !== 'string') continue;
+                if (output[i][8].startsWith('表') || output[i][8] === '所属行业') break;
+                const qClean = String(output[i][8]).replace(/^[A-Z]\./, '');
+                let done = counts.industryCounts[qClean] || 0;
+                output[i][11] = done;
+                output[i][12] = (output[i][10] || 0) - done;
+            }
+
+            // Scale (表3): 完成进度=L(11), 差值=M(12)
+            let scaleFound = false;
+            for (let i = 1; i < output.length && i < 50; i++) {
+                if (output[i][8] && String(output[i][8]).includes('规模')) { scaleFound = true; continue; }
+                if (!scaleFound) continue;
+                if (!output[i][8] || typeof output[i][8] !== 'string') continue;
+                if (output[i][8].startsWith('表') || output[i][8] === '企业总资产规模') break;
+                const qClean = String(output[i][8]).replace(/^[A-Z]\./, '');
+                let done = counts.scaleCounts[qClean] || 0;
+                output[i][11] = done;
+                output[i][12] = (output[i][10] || 0) - done;
+            }
+
+            // Employee (表4): 完成进度=L(11), 差值=M(12)
+            let empFound = false;
+            for (let i = 1; i < output.length && i < 60; i++) {
+                if (output[i][8] && String(output[i][8]).startsWith('表4')) { empFound = true; continue; }
+                if (!empFound) continue;
+                if (!output[i][8] || typeof output[i][8] !== 'string') continue;
+                if (output[i][8].startsWith('表') || output[i][8].includes('在职员工总人数为')) continue;
+                const qClean = String(output[i][8]).replace(/^[A-Z]\./, '').replace(/～/g, '-');
+                let done = 0;
+                Object.keys(counts.employeeCounts).forEach(cEmp => {
+                    if (cEmp.replace(/～/g, '-') === qClean) done = counts.employeeCounts[cEmp];
+                });
+                output[i][11] = done;
+                output[i][12] = (output[i][10] || 0) - done;
+            }
+
+            const ws = XLSX.utils.aoa_to_sheet(output);
+            ws['!cols'] = output[0].map(() => ({ wch: 18 }));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, '配额完成进度');
+
+            // Sheet2: Valid data detail
+            const validRows = state.quotaValidSource === 'uploaded' && state.uploadedCleanedData
+                ? state.uploadedCleanedData.slice(1).filter(r => String(r[26]).trim() === '有效')
+                : (state.afterIP || []).filter(i => !i.cityError && !i.timeError && !i.ipDuplicate).map(i => i.row);
+
+            const exp2 = [['Data100ID','IP','答题时间','省','城市','行业','员工人数','资产规模','处理状态']];
+            validRows.forEach(row => {
+                const industry = String(row[17]||'').replace(/^[A-Z]\./,'');
+                const emp = String(row[20]||'').replace(/^[A-Z]\./,'');
+                const scale = String(row[21]||'').replace(/^[A-Z]\./,'');
+                exp2.push([row[3]||'', row[1]||'', row[6]||'', row[7]||'', row[9]||'', industry, emp, scale, '有效']);
+            });
+            const ws2 = XLSX.utils.aoa_to_sheet(exp2);
+            ws2['!cols'] = exp2[0].map(() => ({wch:18}));
+            XLSX.utils.book_append_sheet(wb, ws2, '有效数据明细(' + validRows.length + '条)');
+
+            XLSX.writeFile(wb, '配额完成进度_'+ts()+'.xlsx');
+        }
+
+        function downloadCEMResult() {
+            const exp = [];
+            state.cemProcessed.forEach(item => {
+                exp.push([...item.row, item.status, item.remark]);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(exp);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'CEM匹配结果');
+            XLSX.writeFile(wb, 'CEM匹配结果_'+ts()+'.xlsx');
+        }
+    </script>
+</body>
+</html>
